@@ -1,0 +1,25 @@
+#!/bin/sh
+set -eu
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ "$#" -ne 1 ]; then echo "Usage: ./elab <experiment-number-or-name>" >&2; echo "Run ./elab help to list experiments." >&2; exit 2; fi
+key=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -s ' _-' '')
+case "$key" in
+ help|list) printf '%s\n' '1 Linux commands' '2 Process creation (fork)' '3 Multithreading' '4 Semaphore and monitor' '5 Reader-writer' '6 Dining philosophers' "7 Banker's algorithm" '8 FCFS and SJF' '9 Priority and Round Robin' '10 FIFO page replacement' '11 LRU and LFU' '12 Best and Worst Fit' '13 FCFS and SCAN' '14 File allocation' '15 Directory schemes'; exit 0 ;;
+ 1|linux|commands|linuxcommands) file=01_linux_commands.txt ;;
+ 2|fork|process|forkprocess) file=02_fork_process.c ;;
+ 3|threads|thread|multithreading) file=03_multithreading.c ;;
+ 4|semaphore|monitor|semaphoremonitor) file=04_semaphore_monitor.c ;;
+ 5|readerwriter|readerswriters) file=05_reader_writer.c ;;
+ 6|dining|philosophers|diningphilosophers) file=06_dining_philosophers.c ;;
+ 7|banker|bankers|bankersalgorithm) file=07_bankers_algorithm.c ;;
+ 8|fcfs|sjf|fcfssjf|scheduling) file=08_fcfs_sjf.c ;;
+ 9|priority|roundrobin|priorityroundrobin) file=09_priority_round_robin.c ;;
+ 10|fifo|pagefifo) file=10_fifo_page_replacement.c ;;
+ 11|lru|lfu|lrulfu) file=11_lru_lfu_page_replacement.c ;;
+ 12|bestfit|worstfit|bestworstfit) file=12_best_worst_fit.c ;;
+ 13|disk|scan|diskscheduling|fcsscan) file=13_fcfs_scan_disk.c ;;
+ 14|allocation|fileallocation|sequential|indexed) file=14_file_allocation.c ;;
+ 15|directory|directories|directoryschemes) file=15_directory_schemes.c ;;
+ *) echo "Unknown experiment: $1 (try ./elab help)" >&2; exit 2 ;;
+esac
+cat "$ROOT/experiments/$file"
