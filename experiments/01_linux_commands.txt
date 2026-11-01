@@ -1,0 +1,18 @@
+EXPERIMENT 1 — OPERATING SYSTEM INSTALLATION AND BASIC LINUX COMMANDS
+
+OS installation is distribution-specific; follow the institution's image/VM instructions.
+date                 show date and time
+pwd                  print current directory
+ls -la               list files, including hidden files
+mkdir lab; cd lab    create and enter a directory
+touch notes.txt      create an empty file
+cat notes.txt        print a file
+wc notes.txt         count lines, words and bytes
+cp notes.txt copy    copy; mv copy renamed.txt moves/renames
+head -5 notes.txt    first five lines; tail -5 notes.txt last five
+chmod 754 notes.txt  owner rwx, group r-x, others r--
+whoami               print current account
+echo hello > out     overwrite output file; >> appends
+cat notes.txt | wc   pipe output into another command
+
+Wildcard examples: ls *.c (suffix), ls file? (one character).
