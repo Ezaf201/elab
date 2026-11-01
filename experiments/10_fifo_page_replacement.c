@@ -1,6 +1,49 @@
-/* Experiment 10: FIFO page replacement; manual sample, three frames. */
+/* Experiment 10: FIFO page replacement using the manual's sample. */
 #include <stdio.h>
-int main(void){int p[]={7,0,1,2,0,3,0,4,2,3,0,3,2,1},f[3]={-1,-1,-1},next=0,faults=0;
- puts("Page\tFrame1\tFrame2\tFrame3\tResult");for(int i=0;i<14;i++){int hit=0;for(int j=0;j<3;j++)if(f[j]==p[i])hit=1;
- if(!hit){f[next]=p[i];next=(next+1)%3;faults++;}printf("%d\t",p[i]);for(int j=0;j<3;j++)if(f[j]<0)printf("-\t");else printf("%d\t",f[j]);puts(hit?"Hit":"Fault");}
- printf("\nTotal page faults = %d\nTotal page hits = %d\n",faults,14-faults);return 0;}
+
+#define FRAME_COUNT 3
+#define PAGE_COUNT 14
+
+int main(void)
+{
+    int pages[PAGE_COUNT] = {7, 0, 1, 2, 0, 3, 0,
+                             4, 2, 3, 0, 3, 2, 1};
+    int frames[FRAME_COUNT] = {-1, -1, -1};
+    int next_frame = 0;
+    int page_faults = 0;
+
+    printf("Page\tFrame1\tFrame2\tFrame3\tResult\n");
+
+    for (int page_index = 0; page_index < PAGE_COUNT; ++page_index) {
+        int page = pages[page_index];
+        int hit = 0;
+
+        for (int frame = 0; frame < FRAME_COUNT; ++frame) {
+            if (frames[frame] == page) {
+                hit = 1;
+                break;
+            }
+        }
+
+        if (!hit) {
+            frames[next_frame] = page;
+            next_frame = (next_frame + 1) % FRAME_COUNT;
+            ++page_faults;
+        }
+
+        printf("%d\t", page);
+        for (int frame = 0; frame < FRAME_COUNT; ++frame) {
+            if (frames[frame] == -1) {
+                printf("-\t");
+            } else {
+                printf("%d\t", frames[frame]);
+            }
+        }
+        puts(hit ? "Hit" : "Fault");
+    }
+
+    printf("\nTotal page faults = %d\n", page_faults);
+    printf("Total page hits = %d\n", PAGE_COUNT - page_faults);
+
+    return 0;
+}
