@@ -1,6 +1,36 @@
 /* Experiment 8: non-preemptive FCFS and SJF CPU scheduling. */
 #include <stdio.h>
-static void report(const char *name,int order[],int n,int burst[]){int time=0,wait=0;printf("%s order: ",name);
- for(int i=0;i<n;i++){int p=order[i];printf("P%d%s",p+1,i==n-1?"\n":" -> ");wait+=time;time+=burst[p];}
- printf("Average waiting time: %.2f\n",(double)wait/n);}
-int main(void){int b[4]={6,8,7,3},f[4]={0,1,2,3},s[4]={3,0,2,1};report("FCFS",f,4,b);report("SJF",s,4,b);return 0;}
+
+static void report_schedule(const char *name, const int order[],
+                            int process_count, const int burst[])
+{
+    int elapsed_time = 0;
+    int total_waiting_time = 0;
+
+    printf("%s order: ", name);
+
+    for (int i = 0; i < process_count; ++i) {
+        int process = order[i];
+
+        printf("P%d%s", process + 1,
+               i == process_count - 1 ? "\n" : " -> ");
+
+        total_waiting_time += elapsed_time;
+        elapsed_time += burst[process];
+    }
+
+    printf("Average waiting time: %.2f\n",
+           (double)total_waiting_time / process_count);
+}
+
+int main(void)
+{
+    int burst[4] = {6, 8, 7, 3};
+    int fcfs_order[4] = {0, 1, 2, 3};
+    int sjf_order[4] = {3, 0, 2, 1};
+
+    report_schedule("FCFS", fcfs_order, 4, burst);
+    report_schedule("SJF", sjf_order, 4, burst);
+
+    return 0;
+}
