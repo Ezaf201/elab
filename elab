@@ -22,4 +22,4 @@ case "$key" in
  15|directory|directories|directoryschemes) file=directory_schemes.c ;;
  *) echo "Unknown experiment: $1 (try ./elab help)" >&2; exit 2 ;;
 esac
-cat "$ROOT/experiments/$file"
+cat "$ROOT/exp/$file"
