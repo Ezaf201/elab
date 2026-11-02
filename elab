@@ -1,10 +1,11 @@
 #!/bin/sh
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-if [ "$#" -ne 1 ]; then echo "Usage: ./elab <experiment-number-or-name>" >&2; echo "Run ./elab help to list experiments." >&2; exit 2; fi
+if [ "$#" -ne 1 ]; then echo "Usage: ./elab <experiment-number-or-name|all>" >&2; echo "Run ./elab help to list experiments." >&2; exit 2; fi
 key=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -d ' _-')
 case "$key" in
- help|list) printf '%s\n' '1 Linux commands' '2 Process creation (fork)' '3 Multithreading' '4 Semaphore and monitor' '5 Reader-writer' '6 Dining philosophers' "7 Banker's algorithm" '8 FCFS and SJF' '9 Priority and Round Robin' '10 FIFO page replacement' '11 LRU and LFU' '12 Best and Worst Fit' '13 FCFS and SCAN' '14 File allocation' '15 Directory schemes'; exit 0 ;;
+ help|list) printf '%s\n' 'all Show all experiments' '1 Linux commands' '2 Process creation (fork)' '3 Multithreading' '4 Semaphore and monitor' '5 Reader-writer' '6 Dining philosophers' "7 Banker's algorithm" '8 FCFS and SJF' '9 Priority and Round Robin' '10 FIFO page replacement' '11 LRU and LFU' '12 Best and Worst Fit' '13 FCFS and SCAN' '14 File allocation' '15 Directory schemes'; exit 0 ;;
+ all|master|masterexp) cat "$ROOT/exp/master_exp"; exit 0 ;;
  1|linux|commands|linuxcommands) file=linux_commands.txt ;;
  2|fork|process|forkprocess) file=fork_process.c ;;
  3|threads|thread|multithreading) file=multithreading.c ;;

@@ -1,0 +1,950 @@
+# OS Lab Master Experiments 1–15
+
+This file collects the complete experiment notes and source code. Each section is standalone; compile a C section by copying it to a .c file, or use ./elab <name> to print one experiment.
+
+
+============================================================
+EXPERIMENT 01 — linux_commands.txt
+============================================================
+
+EXPERIMENT 1 — OPERATING SYSTEM INSTALLATION AND BASIC LINUX COMMANDS
+
+OS installation is distribution-specific; follow the institution's image/VM instructions.
+date                 show date and time
+pwd                  print current directory
+ls -la               list files, including hidden files
+mkdir lab; cd lab    create and enter a directory
+touch notes.txt      create an empty file
+cat notes.txt        print a file
+wc notes.txt         count lines, words and bytes
+cp notes.txt copy    copy; mv copy renamed.txt moves/renames
+head -5 notes.txt    first five lines; tail -5 notes.txt last five
+chmod 754 notes.txt  owner rwx, group r-x, others r--
+whoami               print current account
+echo hello > out     overwrite output file; >> appends
+cat notes.txt | wc   pipe output into another command
+
+Wildcard examples: ls *.c (suffix), ls file? (one character).
+
+
+============================================================
+EXPERIMENT 02 — fork_process.c
+============================================================
+
+/* Experiment 2: fork(), getpid(), getppid(), and wait(). */
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+int main(void)
+{
+    pid_t pid = fork();
+
+    if (pid < 0) {
+        perror("fork");
+        return EXIT_FAILURE;
+    }
+
+    if (pid == 0) {
+        printf("Child: PID=%ld, PPID=%ld\n",
+               (long)getpid(), (long)getppid());
+        return 0;
+    }
+
+    printf("Parent: PID=%ld, child PID=%ld\n",
+           (long)getpid(), (long)pid);
+
+    if (wait(NULL) < 0) {
+        perror("wait");
+        return EXIT_FAILURE;
+    }
+
+    puts("Parent: child has finished");
+    return 0;
+}
+
+
+============================================================
+EXPERIMENT 03 — multithreading.c
+============================================================
+
+/* Experiment 3: POSIX threads. Compile with gcc -pthread. */
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+static void *worker(void *argument)
+{
+    int id = *(int *)argument;
+    printf("Worker thread %d is running\n", id);
+    return NULL;
+}
+
+int main(void)
+{
+    pthread_t threads[2];
+    int ids[2] = {1, 2};
+
+    for (int i = 0; i < 2; ++i) {
+        if (pthread_create(&threads[i], NULL, worker, &ids[i]) != 0) {
+            fputs("pthread_create failed\n", stderr);
+            return EXIT_FAILURE;
+        }
+    }
+
+    for (int i = 0; i < 2; ++i) {
+        pthread_join(threads[i], NULL);
+    }
+
+    puts("All threads joined");
+    return 0;
+}
+
+
+============================================================
+EXPERIMENT 04 — semaphore_monitor.c
+============================================================
+
+/* Experiment 4: mutual exclusion using a POSIX semaphore.
+ * Compile with: gcc -Wall -Wextra -pthread -o semaphore semaphore_monitor.c
+ */
+#include <pthread.h>
+#include <semaphore.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+static sem_t mutex;
+static int counter = 0;
+
+static void *increment(void *unused)
+{
+    (void)unused;
+
+    for (int i = 0; i < 100000; ++i) {
+        sem_wait(&mutex);
+        ++counter;
+        sem_post(&mutex);
+    }
+
+    return NULL;
+}
+
+int main(void)
+{
+    pthread_t first;
+    pthread_t second;
+
+    if (sem_init(&mutex, 0, 1) != 0) {
+        perror("sem_init");
+        return EXIT_FAILURE;
+    }
+
+    if (pthread_create(&first, NULL, increment, NULL) != 0 ||
+        pthread_create(&second, NULL, increment, NULL) != 0) {
+        fputs("pthread_create failed\n", stderr);
+        sem_destroy(&mutex);
+        return EXIT_FAILURE;
+    }
+
+    pthread_join(first, NULL);
+    pthread_join(second, NULL);
+
+    printf("Counter = %d (expected 200000)\n", counter);
+
+    sem_destroy(&mutex);
+    return 0;
+}
+
+
+============================================================
+EXPERIMENT 05 — reader_writer.c
+============================================================
+
+/* Experiment 5: readers-writers using a POSIX read/write lock.
+ * Compile with: gcc -Wall -Wextra -pthread -o reader_writer reader_writer.c
+ */
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+static pthread_rwlock_t lock = PTHREAD_RWLOCK_INITIALIZER;
+static int shared_value = 0;
+
+static void *reader(void *unused)
+{
+    (void)unused;
+
+    pthread_rwlock_rdlock(&lock);
+    printf("Reader sees value %d\n", shared_value);
+    pthread_rwlock_unlock(&lock);
+
+    return NULL;
+}
+
+static void *writer(void *unused)
+{
+    (void)unused;
+
+    pthread_rwlock_wrlock(&lock);
+    ++shared_value;
+    printf("Writer updates value to %d\n", shared_value);
+    pthread_rwlock_unlock(&lock);
+
+    return NULL;
+}
+
+int main(void)
+{
+    pthread_t reader_thread;
+    pthread_t writer_thread;
+
+    if (pthread_create(&reader_thread, NULL, reader, NULL) != 0 ||
+        pthread_create(&writer_thread, NULL, writer, NULL) != 0) {
+        fputs("pthread_create failed\n", stderr);
+        return EXIT_FAILURE;
+    }
+
+    pthread_join(reader_thread, NULL);
+    pthread_join(writer_thread, NULL);
+    pthread_rwlock_destroy(&lock);
+
+    return 0;
+}
+
+
+============================================================
+EXPERIMENT 06 — dining_philosophers.c
+============================================================
+
+/* Experiment 6: dining philosophers.
+ * A room semaphore limits entry to four philosophers and prevents circular wait.
+ * Compile with: gcc -Wall -Wextra -pthread -o dining dining_philosophers.c
+ */
+#include <pthread.h>
+#include <semaphore.h>
+#include <stdio.h>
+#include <unistd.h>
+
+#define PHILOSOPHER_COUNT 5
+
+static pthread_mutex_t forks[PHILOSOPHER_COUNT];
+static sem_t room;
+
+static void *philosopher(void *argument)
+{
+    int id = *(int *)argument;
+
+    for (int round = 0; round < 2; ++round) {
+        printf("Philosopher %d thinking\n", id);
+        sem_wait(&room);
+
+        pthread_mutex_lock(&forks[id]);
+        pthread_mutex_lock(&forks[(id + 1) % PHILOSOPHER_COUNT]);
+
+        printf("Philosopher %d eating\n", id);
+        usleep(10000);
+
+        pthread_mutex_unlock(&forks[(id + 1) % PHILOSOPHER_COUNT]);
+        pthread_mutex_unlock(&forks[id]);
+        sem_post(&room);
+    }
+
+    return NULL;
+}
+
+int main(void)
+{
+    pthread_t threads[PHILOSOPHER_COUNT];
+    int ids[PHILOSOPHER_COUNT];
+
+    sem_init(&room, 0, PHILOSOPHER_COUNT - 1);
+
+    for (int i = 0; i < PHILOSOPHER_COUNT; ++i) {
+        pthread_mutex_init(&forks[i], NULL);
+        ids[i] = i;
+    }
+
+    for (int i = 0; i < PHILOSOPHER_COUNT; ++i) {
+        pthread_create(&threads[i], NULL, philosopher, &ids[i]);
+    }
+
+    for (int i = 0; i < PHILOSOPHER_COUNT; ++i) {
+        pthread_join(threads[i], NULL);
+    }
+
+    for (int i = 0; i < PHILOSOPHER_COUNT; ++i) {
+        pthread_mutex_destroy(&forks[i]);
+    }
+
+    sem_destroy(&room);
+    return 0;
+}
+
+
+============================================================
+EXPERIMENT 07 — bankers_algorithm.c
+============================================================
+
+/* Experiment 7: Banker's algorithm for deadlock avoidance. */
+#include <stdio.h>
+
+#define PROCESS_COUNT 5
+#define RESOURCE_COUNT 3
+
+int main(void)
+{
+    int allocation[PROCESS_COUNT][RESOURCE_COUNT] = {
+        {0, 1, 0}, {2, 0, 0}, {3, 0, 2}, {2, 1, 1}, {0, 0, 2}
+    };
+    int maximum[PROCESS_COUNT][RESOURCE_COUNT] = {
+        {7, 5, 3}, {3, 2, 2}, {9, 0, 2}, {2, 2, 2}, {4, 3, 3}
+    };
+    int available[RESOURCE_COUNT] = {3, 3, 2};
+    int need[PROCESS_COUNT][RESOURCE_COUNT];
+    int finished[PROCESS_COUNT] = {0};
+    int sequence[PROCESS_COUNT];
+    int sequence_count = 0;
+
+    for (int process = 0; process < PROCESS_COUNT; ++process) {
+        for (int resource = 0; resource < RESOURCE_COUNT; ++resource) {
+            need[process][resource] =
+                maximum[process][resource] - allocation[process][resource];
+        }
+    }
+
+    while (sequence_count < PROCESS_COUNT) {
+        int made_progress = 0;
+
+        for (int process = 0; process < PROCESS_COUNT; ++process) {
+            if (finished[process]) {
+                continue;
+            }
+
+            int can_finish = 1;
+            for (int resource = 0; resource < RESOURCE_COUNT; ++resource) {
+                if (need[process][resource] > available[resource]) {
+                    can_finish = 0;
+                    break;
+                }
+            }
+
+            if (can_finish) {
+                for (int resource = 0; resource < RESOURCE_COUNT; ++resource) {
+                    available[resource] += allocation[process][resource];
+                }
+
+                finished[process] = 1;
+                sequence[sequence_count++] = process;
+                made_progress = 1;
+            }
+        }
+
+        if (!made_progress) {
+            break;
+        }
+    }
+
+    if (sequence_count == PROCESS_COUNT) {
+        printf("Safe sequence: ");
+        for (int i = 0; i < PROCESS_COUNT; ++i) {
+            printf("P%d%s", sequence[i], i == PROCESS_COUNT - 1 ? "\n" : " -> ");
+        }
+    } else {
+        puts("Unsafe state");
+    }
+
+    return 0;
+}
+
+
+============================================================
+EXPERIMENT 08 — fcfs_sjf.c
+============================================================
+
+/* Experiment 8: non-preemptive FCFS and SJF CPU scheduling. */
+#include <stdio.h>
+
+static void report_schedule(const char *name, const int order[],
+                            int process_count, const int burst[])
+{
+    int elapsed_time = 0;
+    int total_waiting_time = 0;
+
+    printf("%s order: ", name);
+
+    for (int i = 0; i < process_count; ++i) {
+        int process = order[i];
+
+        printf("P%d%s", process + 1,
+               i == process_count - 1 ? "\n" : " -> ");
+
+        total_waiting_time += elapsed_time;
+        elapsed_time += burst[process];
+    }
+
+    printf("Average waiting time: %.2f\n",
+           (double)total_waiting_time / process_count);
+}
+
+int main(void)
+{
+    int burst[4] = {6, 8, 7, 3};
+    int fcfs_order[4] = {0, 1, 2, 3};
+    int sjf_order[4] = {3, 0, 2, 1};
+
+    report_schedule("FCFS", fcfs_order, 4, burst);
+    report_schedule("SJF", sjf_order, 4, burst);
+
+    return 0;
+}
+
+
+============================================================
+EXPERIMENT 09 — priority_round_robin.c
+============================================================
+
+/* Experiment 9: priority and Round Robin scheduling.
+ * Lower priority number means higher priority; Round Robin quantum is 2.
+ */
+#include <stdio.h>
+
+int main(void)
+{
+    int burst[4] = {5, 3, 8, 6};
+    int current_time = 0;
+    int completed = 0;
+    const int quantum = 2;
+
+    puts("Priority order (highest first): P2 -> P1 -> P4 -> P3");
+    puts("Round Robin completion times:");
+
+    while (completed < 4) {
+        for (int process = 0; process < 4; ++process) {
+            if (burst[process] <= 0) {
+                continue;
+            }
+
+            int run_time = burst[process] < quantum
+                               ? burst[process]
+                               : quantum;
+
+            current_time += run_time;
+            burst[process] -= run_time;
+
+            if (burst[process] == 0) {
+                printf("P%d completes at %d\n",
+                       process + 1, current_time);
+                ++completed;
+            }
+        }
+    }
+
+    return 0;
+}
+
+
+============================================================
+EXPERIMENT 10 — fifo_page_replacement.c
+============================================================
+
+/* Experiment 10: FIFO page replacement using the manual's sample. */
+#include <stdio.h>
+
+#define FRAME_COUNT 3
+#define PAGE_COUNT 14
+
+int main(void)
+{
+    int pages[PAGE_COUNT] = {7, 0, 1, 2, 0, 3, 0,
+                             4, 2, 3, 0, 3, 2, 1};
+    int frames[FRAME_COUNT] = {-1, -1, -1};
+    int next_frame = 0;
+    int page_faults = 0;
+
+    printf("Page\tFrame1\tFrame2\tFrame3\tResult\n");
+
+    for (int page_index = 0; page_index < PAGE_COUNT; ++page_index) {
+        int page = pages[page_index];
+        int hit = 0;
+
+        for (int frame = 0; frame < FRAME_COUNT; ++frame) {
+            if (frames[frame] == page) {
+                hit = 1;
+                break;
+            }
+        }
+
+        if (!hit) {
+            frames[next_frame] = page;
+            next_frame = (next_frame + 1) % FRAME_COUNT;
+            ++page_faults;
+        }
+
+        printf("%d\t", page);
+        for (int frame = 0; frame < FRAME_COUNT; ++frame) {
+            if (frames[frame] == -1) {
+                printf("-\t");
+            } else {
+                printf("%d\t", frames[frame]);
+            }
+        }
+        puts(hit ? "Hit" : "Fault");
+    }
+
+    printf("\nTotal page faults = %d\n", page_faults);
+    printf("Total page hits = %d\n", PAGE_COUNT - page_faults);
+
+    return 0;
+}
+
+
+============================================================
+EXPERIMENT 11 — lru_lfu_page_replacement.c
+============================================================
+
+/* Experiment 11: LRU and LFU page replacement using the manual's sample. */
+#include <stdio.h>
+
+#define FRAME_COUNT 3
+#define PAGE_COUNT 15
+
+static void run_page_replacement(int use_lfu)
+{
+    int pages[PAGE_COUNT] = {1, 2, 3, 2, 1, 5, 2, 1,
+                             6, 2, 5, 6, 3, 1, 3};
+    int frames[FRAME_COUNT] = {-1, -1, -1};
+    int last_used[FRAME_COUNT] = {0};
+    int frequency[FRAME_COUNT] = {0};
+    int page_faults = 0;
+
+    printf("%s Page Replacement\n", use_lfu ? "LFU" : "LRU");
+
+    for (int page_index = 0; page_index < PAGE_COUNT; ++page_index) {
+        int page = pages[page_index];
+        int hit_frame = -1;
+
+        for (int frame = 0; frame < FRAME_COUNT; ++frame) {
+            if (frames[frame] == page) {
+                hit_frame = frame;
+                break;
+            }
+        }
+
+        if (hit_frame >= 0) {
+            last_used[hit_frame] = page_index;
+            ++frequency[hit_frame];
+        } else {
+            ++page_faults;
+            int victim = -1;
+
+            for (int frame = 0; frame < FRAME_COUNT; ++frame) {
+                if (frames[frame] == -1) {
+                    victim = frame;
+                    break;
+                }
+            }
+
+            if (victim == -1) {
+                victim = 0;
+                for (int frame = 1; frame < FRAME_COUNT; ++frame) {
+                    int should_replace =
+                        use_lfu
+                            ? (frequency[frame] < frequency[victim] ||
+                               (frequency[frame] == frequency[victim] &&
+                                last_used[frame] < last_used[victim]))
+                            : (last_used[frame] < last_used[victim]);
+
+                    if (should_replace) {
+                        victim = frame;
+                    }
+                }
+            }
+
+            frames[victim] = page;
+            last_used[victim] = page_index;
+            frequency[victim] = 1;
+        }
+
+        printf("%d\t", page);
+        for (int frame = 0; frame < FRAME_COUNT; ++frame) {
+            if (frames[frame] == -1) {
+                printf("-\t");
+            } else {
+                printf("%d\t", frames[frame]);
+            }
+        }
+        puts(hit_frame >= 0 ? "Hit" : "Fault");
+    }
+
+    printf("Total page faults = %d\n\n", page_faults);
+}
+
+int main(void)
+{
+    run_page_replacement(0);
+    run_page_replacement(1);
+    return 0;
+}
+
+
+============================================================
+EXPERIMENT 12 — best_worst_fit.c
+============================================================
+
+/* Experiment 12: Best Fit and Worst Fit memory allocation.
+ * Sample block and process sizes are taken from the lab manual.
+ */
+#include <stdio.h>
+
+#define BLOCK_COUNT 5
+#define PROCESS_COUNT 4
+
+static void allocate(const char *name, int use_worst_fit)
+{
+    int block_size[BLOCK_COUNT] = {100, 50, 30, 120, 35};
+    int process_size[PROCESS_COUNT] = {40, 10, 30, 60};
+    int block_used[BLOCK_COUNT] = {0};
+    int allocation[PROCESS_COUNT];
+
+    for (int process = 0; process < PROCESS_COUNT; ++process) {
+        allocation[process] = -1;
+
+        for (int block = 0; block < BLOCK_COUNT; ++block) {
+            int fits = !block_used[block] &&
+                       block_size[block] >= process_size[process];
+            int is_better_fit =
+                allocation[process] < 0 ||
+                (use_worst_fit
+                     ? block_size[block] > block_size[allocation[process]]
+                     : block_size[block] < block_size[allocation[process]]);
+
+            if (fits && is_better_fit) {
+                allocation[process] = block;
+            }
+        }
+
+        if (allocation[process] >= 0) {
+            block_used[allocation[process]] = 1;
+        }
+    }
+
+    printf("%s Memory Allocation\n", name);
+    printf("Process\tSize\tBlock\n");
+
+    for (int process = 0; process < PROCESS_COUNT; ++process) {
+        printf("P%d\t%d\t", process + 1, process_size[process]);
+
+        if (allocation[process] >= 0) {
+            int block = allocation[process];
+            printf("%d (size %d)\n", block + 1, block_size[block]);
+        } else {
+            puts("Not Allocated");
+        }
+    }
+}
+
+int main(void)
+{
+    allocate("Best Fit", 0);
+    putchar('\n');
+    allocate("Worst Fit", 1);
+
+    return 0;
+}
+
+
+============================================================
+EXPERIMENT 13 — fcfs_scan_disk.c
+============================================================
+
+/* Experiment 13: FCFS and SCAN disk scheduling.
+ * Manual sample: queue 95, 180, 34, 119, 11, 123, 62, 64;
+ * initial head 50; disk tracks 0–199.
+ */
+#include <stdio.h>
+#include <stdlib.h>
+
+#define REQUEST_COUNT 8
+#define LAST_TRACK 199
+
+static void run_fcfs(const int requests[])
+{
+    int head = 50;
+    int total_movement = 0;
+
+    puts("FCFS Disk Scheduling");
+    printf("Initial head position = %d\n", head);
+    printf("Seek sequence: %d", head);
+
+    for (int i = 0; i < REQUEST_COUNT; ++i) {
+        total_movement += abs(requests[i] - head);
+        head = requests[i];
+        printf(" -> %d", head);
+    }
+
+    printf("\nTotal head movement = %d\n\n", total_movement);
+}
+
+static void run_scan(const int requests[])
+{
+    int sorted[REQUEST_COUNT];
+    int head = 50;
+    int total_movement = 0;
+    int first_higher_request = 0;
+
+    for (int i = 0; i < REQUEST_COUNT; ++i) {
+        sorted[i] = requests[i];
+    }
+
+    for (int i = 0; i < REQUEST_COUNT - 1; ++i) {
+        for (int j = 0; j < REQUEST_COUNT - i - 1; ++j) {
+            if (sorted[j] > sorted[j + 1]) {
+                int temporary = sorted[j];
+                sorted[j] = sorted[j + 1];
+                sorted[j + 1] = temporary;
+            }
+        }
+    }
+
+    while (first_higher_request < REQUEST_COUNT &&
+           sorted[first_higher_request] <= head) {
+        ++first_higher_request;
+    }
+
+    puts("SCAN Disk Scheduling (head moving towards higher tracks)");
+    printf("Initial head position = %d, disk size = 200\n", head);
+    printf("Seek sequence: %d", head);
+
+    for (int i = first_higher_request; i < REQUEST_COUNT; ++i) {
+        total_movement += abs(sorted[i] - head);
+        head = sorted[i];
+        printf(" -> %d", head);
+    }
+
+    total_movement += abs(LAST_TRACK - head);
+    head = LAST_TRACK;
+    printf(" -> %d", head);
+
+    for (int i = first_higher_request - 1; i >= 0; --i) {
+        total_movement += abs(sorted[i] - head);
+        head = sorted[i];
+        printf(" -> %d", head);
+    }
+
+    printf("\nTotal head movement = %d\n", total_movement);
+}
+
+int main(void)
+{
+    int requests[REQUEST_COUNT] = {95, 180, 34, 119, 11, 123, 62, 64};
+
+    run_fcfs(requests);
+    run_scan(requests);
+    return 0;
+}
+
+
+============================================================
+EXPERIMENT 14 — file_allocation.c
+============================================================
+
+/* Experiment 14: sequential and indexed file allocation. */
+#include <stdio.h>
+
+#define DISK_BLOCK_COUNT 50
+
+static void sequential_allocation(void)
+{
+    int disk[DISK_BLOCK_COUNT] = {0};
+    int starts[4] = {5, 8, 20, 2};
+    int lengths[4] = {3, 4, 5, 4};
+
+    puts("Sequential File Allocation");
+
+    for (int file = 0; file < 4; ++file) {
+        int available = 1;
+        int end = starts[file] + lengths[file];
+
+        for (int block = starts[file]; block < end; ++block) {
+            if (block >= DISK_BLOCK_COUNT || disk[block]) {
+                available = 0;
+                break;
+            }
+        }
+
+        printf("\nFile %d: start block = %d, length = %d\n",
+               file + 1, starts[file], lengths[file]);
+
+        if (!available) {
+            puts("File is not allocated (blocks already in use)");
+            continue;
+        }
+
+        for (int block = starts[file]; block < end; ++block) {
+            disk[block] = 1;
+            printf("%d -> %d\n", block, disk[block]);
+        }
+
+        printf("File %d is allocated to the disk\n", file + 1);
+    }
+}
+
+static void indexed_allocation(void)
+{
+    int disk[DISK_BLOCK_COUNT] = {0};
+    int index_blocks[3] = {9, 20, 9};
+    int data_blocks[3][4] = {
+        {1, 2, 3, 4},
+        {10, 11, 12, 13},
+        {30, 31, 32, 33}
+    };
+
+    puts("\nIndexed File Allocation");
+
+    for (int file = 0; file < 3; ++file) {
+        int index_block = index_blocks[file];
+        int available = !disk[index_block];
+
+        printf("\nFile %d: index block = %d\n", file + 1, index_block);
+
+        for (int i = 0; i < 4; ++i) {
+            if (disk[data_blocks[file][i]]) {
+                available = 0;
+            }
+        }
+
+        if (!available) {
+            puts("Not allocated (an index or data block is already in use)");
+            continue;
+        }
+
+        disk[index_block] = 1;
+        for (int i = 0; i < 4; ++i) {
+            int block = data_blocks[file][i];
+            disk[block] = 1;
+            printf("%d -> %d : %d\n", index_block, block, disk[block]);
+        }
+    }
+}
+
+int main(void)
+{
+    sequential_allocation();
+    indexed_allocation();
+    return 0;
+}
+
+
+============================================================
+EXPERIMENT 15 — directory_schemes.c
+============================================================
+
+/* Experiment 15: single-level and two-level directory schemes. */
+#include <stdio.h>
+#include <string.h>
+
+#define FILE_NAME_LENGTH 20
+
+static int find_file(char files[][FILE_NAME_LENGTH],
+                     int file_count, const char *name)
+{
+    for (int i = 0; i < file_count; ++i) {
+        if (strcmp(files[i], name) == 0) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+static void single_level_directory(void)
+{
+    char directory[10][FILE_NAME_LENGTH];
+    int file_count = 0;
+    const char *files_to_create[5] = {
+        "notes.txt", "prog.c", "data.dat", "prog.c", "memo.doc"
+    };
+
+    puts("Single Level Directory");
+
+    for (int i = 0; i < 5; ++i) {
+        if (find_file(directory, file_count, files_to_create[i]) >= 0) {
+            printf("Create %s: failed, name already exists\n",
+                   files_to_create[i]);
+        } else {
+            strcpy(directory[file_count++], files_to_create[i]);
+            printf("Create %s: done\n", files_to_create[i]);
+        }
+    }
+
+    printf("\nSearch memo.doc: %s\n",
+           find_file(directory, file_count, "memo.doc") >= 0
+               ? "found" : "not found");
+    printf("Search temp.txt: %s\n",
+           find_file(directory, file_count, "temp.txt") >= 0
+               ? "found" : "not found");
+
+    int position = find_file(directory, file_count, "prog.c");
+    if (position >= 0) {
+        for (int i = position; i < file_count - 1; ++i) {
+            strcpy(directory[i], directory[i + 1]);
+        }
+        --file_count;
+        puts("Delete prog.c: done");
+    }
+
+    printf("\nDirectory contents (%d files):\n", file_count);
+    for (int i = 0; i < file_count; ++i) {
+        printf("%d. %s\n", i + 1, directory[i]);
+    }
+}
+
+typedef struct {
+    char name[FILE_NAME_LENGTH];
+    char files[10][FILE_NAME_LENGTH];
+    int file_count;
+} UserDirectory;
+
+static void two_level_directory(void)
+{
+    UserDirectory users[3] = {
+        {.name = "user1"},
+        {.name = "user2"},
+        {.name = "user3"}
+    };
+    int owners[6] = {0, 0, 1, 1, 0, 2};
+    const char *file_names[6] = {
+        "a.txt", "b.c", "a.txt", "c.dat", "a.txt", "b.c"
+    };
+
+    puts("\nTwo Level Directory");
+
+    for (int i = 0; i < 6; ++i) {
+        UserDirectory *user = &users[owners[i]];
+
+        if (find_file(user->files, user->file_count, file_names[i]) >= 0) {
+            printf("%s: create %s failed (already exists)\n",
+                   user->name, file_names[i]);
+        } else {
+            strcpy(user->files[user->file_count++], file_names[i]);
+            printf("%s: create %s done\n", user->name, file_names[i]);
+        }
+    }
+
+    puts("\nMaster File Directory");
+    for (int user = 0; user < 3; ++user) {
+        printf("%s:", users[user].name);
+        for (int i = 0; i < users[user].file_count; ++i) {
+            printf(" %s", users[user].files[i]);
+        }
+        putchar('\n');
+    }
+}
+
+int main(void)
+{
+    single_level_directory();
+    two_level_directory();
+    return 0;
+}

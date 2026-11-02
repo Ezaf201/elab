@@ -1,16 +1,16 @@
 # OS Lab Experiments 1–15
 
-Standalone programs and notes for the OS lab manual. Experiments 1–9 are representative implementations based on the manual index; experiments 10–15 follow the extended manual's sample topics.
+The exp folder contains readable source files for individual experiments. The combined master_exp file contains all experiment notes and code in one place.
 
-## Print an experiment
+## Print experiments in the terminal
 
     ./elab help
+    ./elab all
     ./elab fork
     ./elab fifo
     ./elab 8
-    ./elab "round robin"
 
-The launcher prints the matching source or notes. Aliases include fork, fifo, bankers, round robin, reader writer, dining, best fit, scan, allocation, and directory.
+Use ./elab all or ./elab master to print the combined exp/master_exp file. Use a topic name or number to print one experiment.
 
 ## Compile and run C programs
 
